@@ -13,8 +13,6 @@ import copy
 
 class Main(KytosNApp):
 
-    # TO-DO:
-    # Storehouse implementation
     def setup(self):
         self.mirrors = {"mirrors": {}}
         self.enabled_mirrors = {"enabled_mirrors": []}
@@ -240,8 +238,6 @@ class Main(KytosNApp):
             return jsonify(self.enabled_mirrors["enabled_mirrors"])
 
 
-    # TO-DO:
-    # Add the kytos/storehouse implementation
     @rest('v1/all', methods=['GET'])
     def list_all_mirrors(self):
         """Returns a json with all the created mirrors."""
@@ -250,41 +246,6 @@ class Main(KytosNApp):
 
         else:
             return jsonify(self.mirrors["mirrors"]), 200
-
-
-    '''@rest('v1/<mirror_id>', methods=['POST'])
-    def disable_mirror(self, mirror_id):
-        #"""Disables a mirror, using the mirror_id specified in the API call url."""
-        command = request.get_json()
-
-        if ("enable" in command) and (command["enable"].lower() == "false"):
-
-            if mirror_id in self.enabled_mirrors["enabled_mirrors"]:
-
-                #DISABLE THE MIRROR BY REMOVING THE FLOW
-                if self.mirrors["mirrors"][mirror_id]["type"] in ["EVC", "interface"]:
-                    switch = self.mirrors["mirrors"][mirror_id]["switch"]
-                    flow_NApp_url = f'http://0.0.0.0:8181/api/kytos/flow_manager/v2/flows/{switch}'
-                    headers = {'Content-Type': 'application/json'} 
-
-                    payload = json.dumps(self.mirrors["mirrors"][mirror_id]["original_flow"])
-
-                    flow_response = requests.post(flow_NApp_url, headers=headers, data=payload).json()
-
-                    log.info(f"delete response {flow_response}")
-
-                #REMOVE THE MIRROR FROM THE LIST AND CHANGE STATUS
-                self.mirrors["mirrors"][mirror_id]["status"] = "Disabled"
-                self.enabled_mirrors["enabled_mirrors"].remove(mirror_id)
-
-                log.info(f"Mirror id: {mirror_id}")
-                return jsonify(f"Mirror id: {mirror_id}"), 200
-
-            else:
-                return jsonify(f"Invalid mirror: {mirror_id}"), 400
-
-        else:
-            return jsonify("Invalid request"), 400'''
 
 
     @rest('v1/<mirror_id>', methods=['POST'])
