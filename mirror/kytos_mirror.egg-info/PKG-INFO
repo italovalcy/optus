@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: kytos-mirror
+Version: 0.1
+Summary: Core NApps developed by the Kytos Team
+Home-page: http://github.com/kytos/mirror
+Author: Kytos Team
+Author-email: of-ng-dev@ncc.unesp.br
+License: MIT
+Description: UNKNOWN
+Platform: UNKNOWN
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: System :: Networking
+Provides-Extra: dev

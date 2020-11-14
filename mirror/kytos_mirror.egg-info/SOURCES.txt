@@ -1,0 +1,8 @@
+README.rst
+setup.py
+kytos_mirror.egg-info/PKG-INFO
+kytos_mirror.egg-info/SOURCES.txt
+kytos_mirror.egg-info/dependency_links.txt
+kytos_mirror.egg-info/not-zip-safe
+kytos_mirror.egg-info/requires.txt
+kytos_mirror.egg-info/top_level.txt
