@@ -232,13 +232,13 @@ class Main(KytosNApp):
     @rest('v1/', methods=['GET'])
     def list_enabled_mirrors(self):
         """Returns a json with all the enabled mirrors."""
-        return jsonify(self.enabled_mirrors["enabled_mirrors"]), 200
+        return jsonify(self.enabled_mirrors), 200
 
 
     @rest('v1/all', methods=['GET'])
     def list_all_mirrors(self):
         """Returns a json with all the created mirrors."""
-        return jsonify(self.mirrors["mirrors"]), 200
+        return jsonify(self.mirrors), 200
 
 
     @rest('v1/<mirror_id>', methods=['POST'])
