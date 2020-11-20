@@ -142,10 +142,14 @@ class Main(KytosNApp):
                 new_flow = {"flows": []}
 
                 for flow in flow_response[switch]["flows"]:
-                    in_port = flow["match"]["in_port"]
-                    out_ports = [action["port"] for action in flow["actions"]]
+                    if "in_port" in flow["match"]:
+                        in_port = flow["match"]["in_port"]
+                    else:
+                        in_port = []
 
-                    if (in_port == interface_port) or (interface_port in out_ports):
+                    out_ports = [action["port"] for action in flow["actions"] if "port" in action]
+
+                    if (interface_port == in_port) or (interface_port in out_ports):
                         for extraneous_key in ["stats","hard_timeout","priority","id","idle_timeout","switch"]:
                             flow.pop(extraneous_key,None)
 
@@ -176,8 +180,8 @@ class Main(KytosNApp):
             else: 
                 return jsonify(f"Interface not found: {interface}"), 400
 
-        except KeyError:
-            return jsonify("Invalid request"), 400
+        except KeyError as e:
+            return jsonify(f"Invalid request: {e}"), 400
 
 
     '''def create_application_mirror(self, command):
