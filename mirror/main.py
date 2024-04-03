@@ -4,11 +4,13 @@
 
 from kytos.core import KytosNApp, log, rest
 from napps.optus.mirror import settings
-from flask import jsonify, request
+from kytos.core.rest_api import (HTTPException, JSONResponse, Request,
+                                 get_json_or_400)
 from uuid import uuid4
 import requests
 import json
 import copy
+import traceback
 
 
 class Main(KytosNApp):
@@ -47,6 +49,9 @@ class Main(KytosNApp):
 
     def validate_circuit(self, circuit):
         """Validates that the specified circuit exists in mef_eline."""
+        if len(circuit) != 14:
+            return False
+
         url = 'http://0.0.0.0:8181/api/kytos/mef_eline/v2/evc/'
         headers = {'Content-Type': 'application/json'}
         current_circuits = requests.get(url, headers=headers).json()
@@ -72,12 +77,12 @@ class Main(KytosNApp):
             target_port = int(command["target_port"].split(":")[-1])
 
             if self.validate_switch(switch) and self.validate_circuit(circuit_id):
-                
+
                 #CREATE THE MIRROR
-                cookie = int(circuit_id,16) if (len(circuit_id) == 16) else int(circuit_id[len(circuit_id)//2:],16)
+                cookie = int("0xaa" + circuit_id, 16)
 
                 flow_NApp_url = f'http://0.0.0.0:8181/api/kytos/flow_manager/v2/flows/{switch}'
-                headers = {'Content-Type': 'application/json'} 
+                headers = {'Content-Type': 'application/json'}
 
                 flow_response = requests.get(flow_NApp_url, headers=headers).json()
 
@@ -86,19 +91,22 @@ class Main(KytosNApp):
 
                 for flow in flow_response[switch]["flows"]:
                     if (flow["cookie"] == cookie):
-                        for extraneous_key in ["stats","hard_timeout","priority","id","idle_timeout","switch"]:
+                        for extraneous_key in ["stats","hard_timeout","id","idle_timeout","switch", "cookie_mask"]:
                             flow.pop(extraneous_key,None)
 
                         original_flow['flows'].append(copy.deepcopy(flow))
-                        flow["actions"].append({"action_type": "output", "port": target_port})
+                        flow["instructions"][0]["actions"].append({"action_type": "output", "port": target_port})
                         new_flow['flows'].append(flow)
 
                 payload = json.dumps(new_flow)
-                log.info(requests.post(flow_NApp_url, headers=headers, data=payload))
+                res = requests.post(flow_NApp_url, headers=headers, data=payload)
+                if res.status_code != 202:
+                    log.error(f"failed to create flows status={res.status_code} text={res.text} payload={payload}")
+                    raise HTTPException(400, f"Fail to create mirror flows. Return from flow_manager: {res.text}")
 
                 #ADD MIRROR TO MAIN/ACTIVE MIRROR LIST
                 mirror_id = uuid4().hex[:16]
-                
+
                 self.mirrors["mirrors"][mirror_id] = {
                     "name": name,
                     "type": "EVC",
@@ -112,13 +120,15 @@ class Main(KytosNApp):
 
                 self.enabled_mirrors["enabled_mirrors"].append(mirror_id)
 
-                return f"Mirror created: {mirror_id}\n", 200 
+                return JSONResponse(f"Mirror created: {mirror_id}")
 
-            else: 
-                return jsonify(f"Switch not found: {switch}"), 400
+            else:
+                raise HTTPException(400, f"Switch not found: {switch}")
 
-        except KeyError:
-            return jsonify("Invalid request"), 400
+        except KeyError as err:
+            err_msg = traceback.format_exc().replace("\n", ", ")
+            log.error(f"Error handling request: {err}. Traceback: {err_msg}")
+            raise HTTPException(400, "Invalid request")
 
 
     def create_interface_mirror(self, command):
@@ -134,7 +144,7 @@ class Main(KytosNApp):
 
                 #CREATE THE MIRROR
                 flow_NApp_url = f'http://0.0.0.0:8181/api/kytos/flow_manager/v2/flows/{switch}'
-                headers = {'Content-Type': 'application/json'} 
+                headers = {'Content-Type': 'application/json'}
 
                 flow_response = requests.get(flow_NApp_url, headers=headers).json()
 
@@ -156,9 +166,10 @@ class Main(KytosNApp):
                         original_flow['flows'].append(copy.deepcopy(flow))
                         flow["actions"].append({"action_type": "output", "port": target_port})
                         new_flow['flows'].append(flow)
- 
+
                 payload = json.dumps(new_flow)
-                log.info(requests.post(flow_NApp_url, headers=headers, data=payload))
+                res = requests.post(flow_NApp_url, headers=headers, data=payload)
+                log.info(f"create flows status={res.status_code} text={res.text}")
 
                 #ADD MIRROR TO MAIN/ACTIVEMIRROR LIST
                 mirror_id = uuid4().hex[:16]
@@ -176,12 +187,12 @@ class Main(KytosNApp):
 
                 self.enabled_mirrors["enabled_mirrors"].append(mirror_id)
 
-                return f"Mirror created: {mirror_id}\n", 200
-            else: 
-                return jsonify(f"Interface not found: {interface}"), 400
+                return JSONResponse(f"Mirror created: {mirror_id}")
+            else:
+                raise HTTPException(400, f"Interface not found: {interface}")
 
         except KeyError as e:
-            return jsonify(f"Invalid request: {e}"), 400
+            raise HTTPException(400, f"Invalid request: {e}")
 
 
     '''def create_application_mirror(self, command):
@@ -190,10 +201,10 @@ class Main(KytosNApp):
             match = command["match"]
             target_port = int(command["target_port"].split(":")[-1])
 
-            return jsonify(command), 200
+            return JSONResponse(command)
 
         except KeyError:
-            return jsonify("Invalid request"), 400'''
+            raise HTTPException(400, "Invalid request")'''
 
 
     '''def create_rmtprt_vlan_target_mirror(self, command):
@@ -204,18 +215,19 @@ class Main(KytosNApp):
             target_port = int(command["target_port"].split(":")[-1])
             to_tag = command["to_tag"]
 
-            return jsonify(command), 200
+            return JSONResponse(command)
 
         except KeyError:
-            return jsonify("Invalid request"), 400'''
+            raise HTTPException(400, "Invalid request")'''
 
 
-    @rest('v1/', methods=['POST'])
-    def create_mirror(self):
+    @rest('/v1/', methods=['POST'])
+    def create_mirror(self, request: Request) -> JSONResponse:
         """Creates a mirror, calling the appropriate function for the specified mirror type."""
-        command = request.get_json()
+        log.info("NApp optus/mirror received request")
+        command = get_json_or_400(request, self.controller.loop)
 
-        if "circuit_id" in command:      
+        if "circuit_id" in command:
             if "to_tag" in command:
                 #return self.create_rmtprt_vlan_target_mirror(command)
                 pass
@@ -230,25 +242,27 @@ class Main(KytosNApp):
             pass
 
         else:
-            return jsonify("Invalid request"), 400
+            log.info("NApp optus/mirror invalid request")
+            raise HTTPException(400, "Invalid request")
 
 
-    @rest('v1/', methods=['GET'])
-    def list_enabled_mirrors(self):
+    @rest('/v1/', methods=['GET'])
+    def list_enabled_mirrors(self, request: Request) -> JSONResponse:
         """Returns a json with all the enabled mirrors."""
-        return jsonify(self.enabled_mirrors), 200
+        return JSONResponse(self.enabled_mirrors)
 
 
-    @rest('v1/all', methods=['GET'])
-    def list_all_mirrors(self):
+    @rest('/v1/all', methods=['GET'])
+    def list_all_mirrors(self, request: Request) -> JSONResponse:
         """Returns a json with all the created mirrors."""
-        return jsonify(self.mirrors), 200
+        return JSONResponse(self.mirrors)
 
 
-    @rest('v1/<mirror_id>', methods=['POST'])
-    def change_mirror_status(self, mirror_id):
+    @rest('/v1/{mirror_id}', methods=['POST'])
+    def change_mirror_status(self, request: Request) -> JSONResponse:
         """Changes a mirror status, using the mirror_id specified in the API call url."""
-        command = request.get_json()
+        mirror_id = request.path_params["mirror_id"]
+        command = get_json_or_400(request, self.controller.loop)
         status_request = command["enable"].lower()
 
         if ("enable" in command) and (status_request in ["false", "true"]):
@@ -271,9 +285,9 @@ class Main(KytosNApp):
                         flow_to_send = self.mirrors["mirrors"][mirror_id]["mirror_flow"]
                         new_status = "Enabled"
                         self.enabled_mirrors["enabled_mirrors"].append(mirror_id)
-                        
+
                     else:
-                        return jsonify("Invalid request"), 400
+                        raise HTTPException(400, "Invalid request")
 
                     payload = json.dumps(flow_to_send)
                     flow_response = requests.post(flow_NApp_url, headers=headers, data=payload).json()
@@ -281,13 +295,13 @@ class Main(KytosNApp):
                 #REMOVE THE MIRROR FROM THE LIST AND CHANGE STATUS
                 self.mirrors["mirrors"][mirror_id]["status"] = new_status
 
-                return jsonify(f"{new_status} mirror: {mirror_id}"), 200
+                return JSONResponse(f"{new_status} mirror: {mirror_id}")
 
             else:
-                return jsonify(f"Invalid mirror: {mirror_id}"), 400
+                raise HTTPException(400, f"Invalid mirror: {mirror_id}")
 
         else:
-            return jsonify("Invalid request"), 400
+            raise HTTPException(400, "Invalid request")
 
 
 
